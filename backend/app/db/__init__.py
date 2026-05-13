@@ -1,8 +1,18 @@
 from .engine import engine, init_db, session
-from .models import Holding, PriceHistory, Stock, StockFundamentals, User
+from .models import (
+    Holding,
+    MacroSnap,
+    NewsItem,
+    PriceHistory,
+    Stock,
+    StockFundamentals,
+    User,
+)
 
 __all__ = [
     "Holding",
+    "MacroSnap",
+    "NewsItem",
     "PriceHistory",
     "Stock",
     "StockFundamentals",

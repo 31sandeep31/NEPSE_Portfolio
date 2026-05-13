@@ -57,6 +57,33 @@ class User(SQLModel, table=True):
     created_at: datetime
 
 
+class NewsItem(SQLModel, table=True):
+    # Composite PK is slug — Sharesansar slugs are unique. We also store the URL for display.
+    slug: str = Field(primary_key=True)
+    title: str
+    url: str
+    published_date: Optional[str] = None  # ISO date if parseable from slug
+    fetched_at: datetime
+    # JSON-encoded list of policy tags (monetary, fiscal, macro, corporate_action)
+    policy_tags_csv: str = ""
+    sector_tags_csv: str = ""
+    symbols_mentioned_csv: str = ""
+
+
+class MacroSnap(SQLModel, table=True):
+    # We keep only the latest snapshot; PK is the as_of date.
+    as_of: str = Field(primary_key=True)  # ISO date from NRB
+    fetched_at: datetime
+    total_deposits_npr_bn: Optional[float] = None
+    commercial_banks_deposits_npr_bn: Optional[float] = None
+    other_bfis_deposits_npr_bn: Optional[float] = None
+    total_lending_npr_bn: Optional[float] = None
+    commercial_banks_lending_npr_bn: Optional[float] = None
+    other_bfis_lending_npr_bn: Optional[float] = None
+    cd_ratio_pct: Optional[float] = None
+    forex_json: str = ""  # JSON-encoded list of {currency, buy, sell}
+
+
 class Holding(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(foreign_key="user.username", index=True)

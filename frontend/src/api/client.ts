@@ -1,7 +1,10 @@
 import type {
   Holding,
   HoldingInput,
+  MacroResponse,
   MoversResponse,
+  NewsArticle,
+  PolicyRatesResponse,
   PortfolioAnalysis,
   PriceBar,
   Stock,
@@ -32,6 +35,16 @@ export const api = {
     request<PriceBar[]>(`/stocks/${symbol}/history?days=${days}`),
 
   getMovers: (limit = 5) => request<MoversResponse>(`/movers?limit=${limit}`),
+
+  getNews: (filter: "all" | "monetary" | "fiscal" | "macro" | "corporate_action" = "all", limit = 100) =>
+    request<NewsArticle[]>(`/news?filter=${filter}&limit=${limit}`),
+
+  getNewsForUser: (username: string, limit = 100) =>
+    request<NewsArticle[]>(`/news/for-user/${username}?limit=${limit}`),
+
+  getPolicyRates: () => request<PolicyRatesResponse>("/policy/rates"),
+
+  getMacro: () => request<MacroResponse>("/policy/macro"),
 
   claimUsername: (username: string) =>
     request<{ username: string; created_at: string }>("/users", {

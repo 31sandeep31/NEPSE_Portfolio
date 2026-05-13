@@ -147,3 +147,51 @@ export interface MoversResponse {
   by_volume: MoverRow[]
   sector_summary: SectorSummary[]
 }
+
+export interface NewsArticle {
+  slug: string
+  title: string
+  url: string
+  published_date: string | null
+  fetched_at: string | null
+  policy_tags: string[]
+  sector_tags: string[]
+  symbols_mentioned: string[]
+}
+
+export interface PolicyRateRow {
+  name: string
+  value: number
+  unit: string
+  effective_date: string
+  source: string
+  note: string
+}
+
+export interface PolicyLink {
+  title: string
+  url: string
+  blurb: string
+}
+
+export interface PolicyRatesResponse {
+  monetary_rates: PolicyRateRow[]
+  fiscal_highlights: PolicyRateRow[]
+  links: PolicyLink[]
+}
+
+export interface MacroResponse {
+  available: boolean
+  as_of?: string
+  fetched_at?: string
+  banking?: {
+    total_deposits_npr_bn: number | null
+    commercial_banks_deposits_npr_bn: number | null
+    other_bfis_deposits_npr_bn: number | null
+    total_lending_npr_bn: number | null
+    commercial_banks_lending_npr_bn: number | null
+    other_bfis_lending_npr_bn: number | null
+    cd_ratio_pct: number | null
+  }
+  forex?: { currency: string; buy: number; sell: number }[]
+}

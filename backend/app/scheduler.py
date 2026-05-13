@@ -10,8 +10,12 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from datetime import timedelta
 
-from .db import init_db, session
+import json
+
+from .db import MacroSnap, NewsItem, init_db, session
+from .db.models import NewsItem as NewsItemModel
 from .db.repo import (
+    all_known_symbols,
     held_symbols,
     history_min_max_date,
     upsert_daily_bars,
@@ -27,6 +31,8 @@ from .scraper import (
     fetch_live_prices,
 )
 from .scraper.history import HistoryClient
+from .scraper.macro import MacroError, fetch_macro_snapshot
+from .scraper.news import NewsError, detect_tags, fetch_news_listing
 
 log = logging.getLogger(__name__)
 
@@ -104,6 +110,66 @@ def _bootstrap_history_if_needed() -> None:
     log.info("history bootstrap: done")
 
 
+def _job_refresh_news() -> None:
+    try:
+        articles = fetch_news_listing()
+    except NewsError as e:
+        log.warning("news fetch failed: %s", e)
+        return
+    if not articles:
+        return
+    with session() as s:
+        held = set(held_symbols(s))
+        all_syms = set(all_known_symbols(s))
+        n_new = 0
+        for a in articles:
+            existing = s.get(NewsItem, a.slug)
+            if existing is not None:
+                continue
+            tags = detect_tags(a.title, sorted(held), all_syms)
+            row = NewsItem(
+                slug=a.slug,
+                title=a.title,
+                url=a.url,
+                published_date=a.published_date,
+                fetched_at=a.fetched_at,
+                policy_tags_csv=",".join(tags["policy"]),
+                sector_tags_csv=",".join(tags["sectors"]),
+                symbols_mentioned_csv=",".join(tags["symbols_mentioned"]),
+            )
+            s.add(row)
+            n_new += 1
+        s.commit()
+    log.info("news: %d new articles", n_new)
+
+
+def _job_refresh_macro() -> None:
+    try:
+        snap = fetch_macro_snapshot()
+    except MacroError as e:
+        log.warning("macro fetch failed: %s", e)
+        return
+    if snap.banking is None:
+        log.info("macro: banking aggregates not found, skipping save")
+        return
+    with session() as s:
+        existing = s.get(MacroSnap, snap.banking.as_of)
+        if existing is None:
+            existing = MacroSnap(as_of=snap.banking.as_of, fetched_at=snap.fetched_at)
+        existing.fetched_at = snap.fetched_at
+        existing.total_deposits_npr_bn = snap.banking.total_deposits_npr_bn
+        existing.commercial_banks_deposits_npr_bn = snap.banking.commercial_banks_deposits_npr_bn
+        existing.other_bfis_deposits_npr_bn = snap.banking.other_bfis_deposits_npr_bn
+        existing.total_lending_npr_bn = snap.banking.total_lending_npr_bn
+        existing.commercial_banks_lending_npr_bn = snap.banking.commercial_banks_lending_npr_bn
+        existing.other_bfis_lending_npr_bn = snap.banking.other_bfis_lending_npr_bn
+        existing.cd_ratio_pct = snap.banking.cd_ratio_pct
+        existing.forex_json = json.dumps([f.model_dump() for f in snap.forex])
+        s.add(existing)
+        s.commit()
+    log.info("macro: saved snapshot as_of=%s", snap.banking.as_of)
+
+
 def _job_refresh_fundamentals_for_held() -> None:
     with session() as s:
         symbols = held_symbols(s)
@@ -167,6 +233,31 @@ def build_scheduler() -> BackgroundScheduler:
         "date",
         run_date=datetime.now(timezone.utc) + timedelta(seconds=5),
         id="history_bootstrap",
+        max_instances=1,
+        coalesce=True,
+    )
+    # News every 30 minutes, with an immediate first run shortly after startup.
+    sched.add_job(
+        _job_refresh_news,
+        IntervalTrigger(minutes=30),
+        id="refresh_news",
+        max_instances=1,
+        coalesce=True,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=10),
+    )
+    # Macro daily at 09:30 UTC + immediate first run on startup.
+    sched.add_job(
+        _job_refresh_macro,
+        CronTrigger(hour=9, minute=45, timezone="UTC"),
+        id="refresh_macro",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        _job_refresh_macro,
+        "date",
+        run_date=datetime.now(timezone.utc) + timedelta(seconds=15),
+        id="macro_bootstrap",
         max_instances=1,
         coalesce=True,
     )

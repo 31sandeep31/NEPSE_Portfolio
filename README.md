@@ -20,6 +20,23 @@ A small web app for tracking your NEPSE portfolio and getting fundamentals-based
 
 - It does **not** predict the exact date/time of the next high or low. Nothing can.
 - The username login has **no privacy** — anyone who knows your username can read or change that portfolio. Pick something only you would think of.
+- It does **not** auto-generate monetary/fiscal policy "analysis." Nepali macro data is too sparse for confident automated takes; we surface the raw rates + plain-English explainers and link out to NRB/MoF documents instead.
+
+## New: News and Policy
+
+- **News tab** scrapes Sharesansar's news listing every 30 minutes. Articles are auto-tagged:
+  - `#monetary` — NRB, policy rate, CRR/SLR, liquidity
+  - `#fiscal` — budget, Finance Ministry, tax changes, SEBON
+  - `#macro` — GDP, inflation, remittance, BoP
+  - `#corporate_action` — IPO, bonus, rights, dividend, AGM, merger
+  - Any of your held NEPSE symbols mentioned in the headline.
+  - Filter "Affecting my portfolio" → only shows articles that mention symbols you hold.
+- **Policy tab** combines:
+  - Live banking-system snapshot from NRB (total deposits, total lending, CD ratio, forex rates).
+  - Current monetary policy rates (Policy Rate / Bank Rate / CRR / SLR) with plain-English explanations of what each lever does.
+  - Current fiscal policy hits to your wallet (CGT short/long term, dividend tax, SEBON levy).
+  - Recent policy-tagged news.
+  - Direct links to NRB, Ministry of Finance, SEBON, and NEPSE official sources.
 
 ## Repo layout
 

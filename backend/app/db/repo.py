@@ -105,6 +105,16 @@ def held_symbols(s: Session) -> list[str]:
     return [r for r in rows]
 
 
+def held_symbols_for_user(s: Session, username: str) -> list[str]:
+    rows = s.exec(select(Holding.symbol).where(Holding.username == username).distinct()).all()
+    return list(rows)
+
+
+def all_known_symbols(s: Session) -> list[str]:
+    rows = s.exec(select(Stock.symbol)).all()
+    return list(rows)
+
+
 def ensure_user(s: Session, username: str) -> User:
     existing = s.get(User, username)
     if existing is not None:
