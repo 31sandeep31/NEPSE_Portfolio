@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
+from ..scraper.types import DailyBar
 from ..scraper.types import Fundamentals as ScrapedFundamentals
 from ..scraper.types import LiveSnapshot
-from .models import Holding, Stock, StockFundamentals, User
+from .models import Holding, PriceHistory, Stock, StockFundamentals, User
 
 
 def upsert_live_snapshot(s: Session, snap: LiveSnapshot) -> int:
@@ -60,6 +61,42 @@ def upsert_fundamentals(s: Session, f: ScrapedFundamentals) -> None:
         stock.sector = f.sector
         s.add(stock)
     s.commit()
+
+
+def upsert_daily_bars(s: Session, bars: list[DailyBar]) -> int:
+    n = 0
+    for b in bars:
+        existing = s.get(PriceHistory, (b.symbol, b.date))
+        if existing is None:
+            existing = PriceHistory(symbol=b.symbol, date=b.date)
+        existing.open = b.open
+        existing.high = b.high
+        existing.low = b.low
+        existing.close = b.close
+        existing.volume = b.volume
+        s.add(existing)
+        n += 1
+    s.commit()
+    return n
+
+
+def history_for(s: Session, symbol: str, limit: int = 90) -> list[PriceHistory]:
+    rows = s.exec(
+        select(PriceHistory)
+        .where(PriceHistory.symbol == symbol)
+        .order_by(PriceHistory.date.desc())
+        .limit(limit)
+    ).all()
+    rows.reverse()  # oldest first for charting
+    return rows
+
+
+def history_min_max_date(s: Session) -> tuple[str | None, str | None]:
+    rows = s.exec(select(PriceHistory.date).distinct()).all()
+    if not rows:
+        return None, None
+    dates = sorted(rows)
+    return dates[0], dates[-1]
 
 
 def held_symbols(s: Session) -> list[str]:

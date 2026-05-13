@@ -41,6 +41,17 @@ class StockFundamentals(SQLModel, table=True):
     fetched_at: datetime
 
 
+class PriceHistory(SQLModel, table=True):
+    # Composite PK so we get one row per (symbol, date).
+    symbol: str = Field(primary_key=True, index=True)
+    date: str = Field(primary_key=True)  # ISO date 'YYYY-MM-DD'
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    close: Optional[float] = None
+    volume: Optional[int] = None
+
+
 class User(SQLModel, table=True):
     username: str = Field(primary_key=True, min_length=2, max_length=40)
     created_at: datetime

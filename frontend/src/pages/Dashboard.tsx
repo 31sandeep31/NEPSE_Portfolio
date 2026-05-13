@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { api } from "../api/client"
+import { MoversStrip } from "../components/MoversStrip"
 import { fmtMoney, PriceCell } from "../components/PriceCell"
 import { SignalBadge } from "../components/SignalBadge"
 import { useUsername } from "../hooks/useUsername"
@@ -48,32 +49,54 @@ export function Dashboard() {
       </header>
 
       {noHoldings ? (
-        <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center">
-          <p className="text-gray-600 dark:text-gray-400 mb-3">
-            Your portfolio is empty. Add a holding to get started.
-          </p>
-          <Link
-            to="/portfolio"
-            className="inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Go to Portfolio
-          </Link>
-        </div>
+        <>
+          <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center">
+            <p className="text-gray-600 dark:text-gray-400 mb-3">
+              Your portfolio is empty. Add a holding to get started.
+            </p>
+            <Link
+              to="/portfolio"
+              className="inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Go to Portfolio
+            </Link>
+          </div>
+          <section>
+            <h2 className="text-lg font-semibold mb-2">Market today</h2>
+            <MoversStrip />
+          </section>
+        </>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <StatCard label="Cost basis" value={`Rs ${fmtMoney(data.total_cost_basis)}`} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard label="Cost basis" value={`Rs ${fmtMoney(data.total_cost_basis_with_fees)}`} sub="incl. buy fees" />
             <StatCard label="Current value" value={`Rs ${fmtMoney(data.total_current_value)}`} />
             <StatCard
-              label="Unrealized P&L"
+              label="Gross P&L"
               value={
                 <PriceCell
                   value={data.total_unrealized_pl}
                   pct={data.total_unrealized_pl_pct}
                 />
               }
+              sub="price change only"
+            />
+            <StatCard
+              label="Net if sold now"
+              value={
+                <PriceCell
+                  value={data.total_net_pl_if_sold}
+                  pct={data.total_net_pl_pct_if_sold}
+                />
+              }
+              sub="after broker, SEBON, DP, CGT"
             />
           </div>
+
+          <section>
+            <h2 className="text-lg font-semibold mb-2">Market today</h2>
+            <MoversStrip />
+          </section>
 
           {allSignals.length > 0 && (
             <section>
@@ -104,11 +127,20 @@ export function Dashboard() {
   )
 }
 
-function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
+function StatCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: string
+}) {
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
       <div className="text-xs uppercase tracking-wide text-gray-500">{label}</div>
       <div className="text-xl font-semibold mt-1">{value}</div>
+      {sub && <div className="text-[11px] text-gray-500 mt-1">{sub}</div>}
     </div>
   )
 }
@@ -124,7 +156,8 @@ function HoldingsTable({ analyses }: { analyses: import("../api/types").HoldingA
             <th className="px-3 py-2 text-right">Buy</th>
             <th className="px-3 py-2 text-right">LTP</th>
             <th className="px-3 py-2 text-right">Value</th>
-            <th className="px-3 py-2 text-right">P&L</th>
+            <th className="px-3 py-2 text-right">Gross P&L</th>
+            <th className="px-3 py-2 text-right" title="After broker, SEBON, DP, CGT">Net P&L</th>
             <th className="px-3 py-2 text-right">Signals</th>
           </tr>
         </thead>
@@ -144,6 +177,16 @@ function HoldingsTable({ analyses }: { analyses: import("../api/types").HoldingA
               <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(h.current_value)}</td>
               <td className="px-3 py-2 text-right">
                 <PriceCell value={h.unrealized_pl} pct={h.unrealized_pl_pct} />
+              </td>
+              <td
+                className="px-3 py-2 text-right"
+                title={
+                  h.sell_fees
+                    ? `Broker ${h.sell_fees.broker_commission.toFixed(2)} · SEBON ${h.sell_fees.sebon_levy.toFixed(2)} · DP ${h.sell_fees.dp_charge.toFixed(2)} · CGT ${h.sell_fees.capital_gains_tax.toFixed(2)} @ ${(h.sell_fees.cgt_rate * 100).toFixed(1)}%`
+                    : undefined
+                }
+              >
+                <PriceCell value={h.net_pl_if_sold} pct={h.net_pl_pct_if_sold} />
               </td>
               <td className="px-3 py-2 text-right">{h.signals.length || "—"}</td>
             </tr>

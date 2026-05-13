@@ -3,7 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select
 
-from ..db import Stock, StockFundamentals, session
+from ..db import PriceHistory, Stock, StockFundamentals, session
+from ..db.repo import history_for
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -16,6 +17,25 @@ def list_stocks(sector: str | None = None, limit: int = 500):
             stmt = stmt.where(Stock.sector == sector)
         rows = s.exec(stmt.limit(limit)).all()
     return [_serialize_stock(r) for r in rows]
+
+
+@router.get("/{symbol}/history")
+def get_history(symbol: str, days: int = 90):
+    symbol = symbol.upper().strip()
+    days = max(1, min(days, 365))
+    with session() as s:
+        rows = history_for(s, symbol, limit=days)
+    return [
+        {
+            "date": r.date,
+            "open": r.open,
+            "high": r.high,
+            "low": r.low,
+            "close": r.close,
+            "volume": r.volume,
+        }
+        for r in rows
+    ]
 
 
 @router.get("/{symbol}")

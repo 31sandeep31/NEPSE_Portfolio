@@ -1,12 +1,14 @@
 import type {
   Holding,
   HoldingInput,
+  MoversResponse,
   PortfolioAnalysis,
+  PriceBar,
   Stock,
   StockDetail,
 } from "./types"
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8765"
+const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://127.0.0.1:8765"
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
@@ -25,6 +27,11 @@ export const api = {
     request<Stock[]>(`/stocks${sector ? `?sector=${encodeURIComponent(sector)}` : ""}`),
 
   getStock: (symbol: string) => request<StockDetail>(`/stocks/${symbol}`),
+
+  getStockHistory: (symbol: string, days = 90) =>
+    request<PriceBar[]>(`/stocks/${symbol}/history?days=${days}`),
+
+  getMovers: (limit = 5) => request<MoversResponse>(`/movers?limit=${limit}`),
 
   claimUsername: (username: string) =>
     request<{ username: string; created_at: string }>("/users", {

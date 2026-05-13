@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from .db.models import Holding, Stock, StockFundamentals
+from .fees import buy_costs, sell_costs
 from .scheduler import is_market_open
 
 
@@ -32,16 +33,31 @@ class Signal(BaseModel):
     data: dict
 
 
+class FeeBreakdown(BaseModel):
+    broker_commission: float
+    sebon_levy: float
+    dp_charge: float
+    capital_gains_tax: float
+    cgt_rate: float
+    total: float
+
+
 class HoldingAnalysis(BaseModel):
     holding_id: int
     symbol: str
     qty: float
     buy_price: float
     cost_basis: float
+    cost_basis_with_fees: float
     current_price: float | None
     current_value: float | None
     unrealized_pl: float | None
     unrealized_pl_pct: float | None
+    # "If you sold now" — net of all fees and CGT.
+    net_proceeds_if_sold: float | None
+    net_pl_if_sold: float | None
+    net_pl_pct_if_sold: float | None
+    sell_fees: FeeBreakdown | None
     target_pct: float | None
     signals: list[Signal]
 
@@ -52,9 +68,13 @@ class PortfolioAnalysis(BaseModel):
     market_open: bool | None
     last_price_update: datetime | None
     total_cost_basis: float
+    total_cost_basis_with_fees: float
     total_current_value: float | None
     total_unrealized_pl: float | None
     total_unrealized_pl_pct: float | None
+    total_net_proceeds_if_sold: float | None
+    total_net_pl_if_sold: float | None
+    total_net_pl_pct_if_sold: float | None
     holdings: list[HoldingAnalysis]
     warnings: list[str]
 
@@ -262,19 +282,29 @@ def analyze_portfolio(s: Session, username: str) -> PortfolioAnalysis:
 
     holding_analyses: list[HoldingAnalysis] = []
     total_cost = 0.0
+    total_cost_with_fees = 0.0
     total_value: float | None = 0.0
+    total_net_proceeds: float | None = 0.0
     total_value_known = True
 
     for h in holdings:
         stock = s.get(Stock, h.symbol)
         fund = s.get(StockFundamentals, h.symbol)
         cost_basis = h.qty * h.buy_price
+        bc = buy_costs(h.qty, h.buy_price)
+        cost_basis_with_fees = bc.effective_cost
         total_cost += cost_basis
+        total_cost_with_fees += cost_basis_with_fees
 
         current_price = stock.ltp if stock else None
         if stock and stock.updated_at:
             if last_price_update is None or stock.updated_at > last_price_update:
                 last_price_update = stock.updated_at
+
+        sell_fee_obj: FeeBreakdown | None = None
+        net_proceeds_if_sold: float | None = None
+        net_pl_if_sold: float | None = None
+        net_pl_pct_if_sold: float | None = None
 
         if current_price is None:
             current_value = None
@@ -287,6 +317,30 @@ def analyze_portfolio(s: Session, username: str) -> PortfolioAnalysis:
             unrealized_pl_pct = (unrealized_pl / cost_basis * 100.0) if cost_basis > 0 else None
             if total_value is not None:
                 total_value += current_value
+
+            sc = sell_costs(
+                qty=h.qty,
+                sell_price=current_price,
+                cost_basis_per_share=h.buy_price,
+                buy_date=h.buy_date,
+            )
+            sell_fee_obj = FeeBreakdown(
+                broker_commission=sc.broker_commission,
+                sebon_levy=sc.sebon_levy,
+                dp_charge=sc.dp_charge,
+                capital_gains_tax=sc.capital_gains_tax,
+                cgt_rate=sc.cgt_rate,
+                total=sc.total,
+            )
+            net_proceeds_if_sold = round(sc.net_proceeds, 2)
+            net_pl_if_sold = round(net_proceeds_if_sold - cost_basis_with_fees, 2)
+            net_pl_pct_if_sold = (
+                round(net_pl_if_sold / cost_basis_with_fees * 100.0, 2)
+                if cost_basis_with_fees > 0
+                else None
+            )
+            if total_net_proceeds is not None:
+                total_net_proceeds += sc.net_proceeds
 
         sector_pe = sector_medians["pe"].get(fund.sector) if fund and fund.sector else None
         sector_pb = sector_medians["pb"].get(fund.sector) if fund and fund.sector else None
@@ -314,10 +368,15 @@ def analyze_portfolio(s: Session, username: str) -> PortfolioAnalysis:
                 qty=h.qty,
                 buy_price=h.buy_price,
                 cost_basis=round(cost_basis, 2),
+                cost_basis_with_fees=round(cost_basis_with_fees, 2),
                 current_price=current_price,
                 current_value=round(current_value, 2) if current_value is not None else None,
                 unrealized_pl=round(unrealized_pl, 2) if unrealized_pl is not None else None,
                 unrealized_pl_pct=round(unrealized_pl_pct, 2) if unrealized_pl_pct is not None else None,
+                net_proceeds_if_sold=net_proceeds_if_sold,
+                net_pl_if_sold=net_pl_if_sold,
+                net_pl_pct_if_sold=net_pl_pct_if_sold,
+                sell_fees=sell_fee_obj,
                 target_pct=h.target_pct,
                 signals=signals,
             )
@@ -327,9 +386,16 @@ def analyze_portfolio(s: Session, username: str) -> PortfolioAnalysis:
         total_value = None
         total_pl = None
         total_pl_pct = None
+        total_net_proceeds = None
+        total_net_pl = None
+        total_net_pl_pct = None
     else:
         total_pl = total_value - total_cost
         total_pl_pct = (total_pl / total_cost * 100.0) if total_cost > 0 else None
+        total_net_pl = total_net_proceeds - total_cost_with_fees
+        total_net_pl_pct = (
+            total_net_pl / total_cost_with_fees * 100.0
+        ) if total_cost_with_fees > 0 else None
 
     return PortfolioAnalysis(
         username=username,
@@ -337,9 +403,13 @@ def analyze_portfolio(s: Session, username: str) -> PortfolioAnalysis:
         market_open=market_open,
         last_price_update=last_price_update,
         total_cost_basis=round(total_cost, 2),
+        total_cost_basis_with_fees=round(total_cost_with_fees, 2),
         total_current_value=round(total_value, 2) if total_value is not None else None,
         total_unrealized_pl=round(total_pl, 2) if total_pl is not None else None,
         total_unrealized_pl_pct=round(total_pl_pct, 2) if total_pl_pct is not None else None,
+        total_net_proceeds_if_sold=round(total_net_proceeds, 2) if total_net_proceeds is not None else None,
+        total_net_pl_if_sold=round(total_net_pl, 2) if total_net_pl is not None else None,
+        total_net_pl_pct_if_sold=round(total_net_pl_pct, 2) if total_net_pl_pct is not None else None,
         holdings=holding_analyses,
         warnings=warnings,
     )

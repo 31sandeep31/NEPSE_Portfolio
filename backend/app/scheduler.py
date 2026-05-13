@@ -8,9 +8,25 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from datetime import timedelta
+
 from .db import init_db, session
-from .db.repo import held_symbols, upsert_fundamentals, upsert_live_snapshot
-from .scraper import FundamentalsError, ScrapeError, fetch_fundamentals, fetch_live_prices
+from .db.repo import (
+    held_symbols,
+    history_min_max_date,
+    upsert_daily_bars,
+    upsert_fundamentals,
+    upsert_live_snapshot,
+)
+from .scraper import (
+    FundamentalsError,
+    HistoryError,
+    ScrapeError,
+    fetch_daily_bars,
+    fetch_fundamentals,
+    fetch_live_prices,
+)
+from .scraper.history import HistoryClient
 
 log = logging.getLogger(__name__)
 
@@ -36,6 +52,56 @@ def _job_refresh_live() -> None:
     with session() as s:
         n = upsert_live_snapshot(s, snap)
     log.info("live: wrote %d rows", n)
+
+
+HISTORY_BACKFILL_DAYS = 60
+HISTORY_PER_REQUEST_DELAY = 1.0
+
+
+def _job_refresh_history_today() -> None:
+    """Daily: scrape today's archive (NEPSE doesn't trade Fri/Sat)."""
+    today = datetime.now(timezone.utc).date()
+    if today.weekday() in (4, 5):
+        return
+    try:
+        bars = fetch_daily_bars(today)
+    except HistoryError as e:
+        log.warning("history-today failed: %s", e)
+        return
+    if not bars:
+        log.info("history-today: empty (holiday or before close)")
+        return
+    with session() as s:
+        n = upsert_daily_bars(s, bars)
+    log.info("history-today: wrote %d bars", n)
+
+
+def _bootstrap_history_if_needed() -> None:
+    """One-time backfill of recent days. Skips if history is already populated.
+
+    Uses a single HistoryClient session to reuse the CSRF token + cookies across requests.
+    """
+    with session() as s:
+        oldest, newest = history_min_max_date(s)
+    today = datetime.now(timezone.utc).date()
+    if newest:
+        return
+    log.info("history bootstrap: filling last %d days", HISTORY_BACKFILL_DAYS)
+    with HistoryClient() as h:
+        for delta in range(1, HISTORY_BACKFILL_DAYS + 1):
+            d = today - timedelta(days=delta)
+            if d.weekday() in (4, 5):
+                continue
+            try:
+                bars = h.fetch_bars(d)
+            except HistoryError as e:
+                log.warning("history[%s] skipped: %s", d, e)
+                continue
+            if bars:
+                with session() as s:
+                    upsert_daily_bars(s, bars)
+            time.sleep(HISTORY_PER_REQUEST_DELAY)
+    log.info("history bootstrap: done")
 
 
 def _job_refresh_fundamentals_for_held() -> None:
@@ -83,6 +149,24 @@ def build_scheduler() -> BackgroundScheduler:
         _job_refresh_fundamentals_for_held,
         CronTrigger(day_of_week="sun,mon,tue,wed,thu", hour=10, minute=30, timezone="UTC"),
         id="refresh_fundamentals_held",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        _job_refresh_history_today,
+        # Daily after NEPSE close: 15:00 NPT = 09:15 UTC, run at 09:30 UTC.
+        CronTrigger(day_of_week="sun,mon,tue,wed,thu", hour=9, minute=30, timezone="UTC"),
+        id="refresh_history_today",
+        max_instances=1,
+        coalesce=True,
+    )
+    # Schedule the bootstrap to run once shortly after startup so it doesn't
+    # block the FastAPI lifespan.
+    sched.add_job(
+        _bootstrap_history_if_needed,
+        "date",
+        run_date=datetime.now(timezone.utc) + timedelta(seconds=5),
+        id="history_bootstrap",
         max_instances=1,
         coalesce=True,
     )

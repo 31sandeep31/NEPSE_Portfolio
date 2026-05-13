@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useParams } from "react-router-dom"
 import { api } from "../api/client"
 import { fmtMoney, PriceCell } from "../components/PriceCell"
+import { PriceChart } from "../components/PriceChart"
 
 export function StockDetail() {
   const { symbol } = useParams<{ symbol: string }>()
@@ -44,6 +45,18 @@ export function StockDetail() {
         <Stat label="High" value={live.high} />
         <Stat label="Low" value={live.low} />
         <Stat label="Prev close" value={live.prev_close} />
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold mb-2">Price history</h2>
+        <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3">
+          <PriceChart
+            symbol={live.symbol}
+            days={90}
+            high52w={f?.week_52_high ?? null}
+            low52w={f?.week_52_low ?? null}
+          />
+        </div>
       </section>
 
       {f && (

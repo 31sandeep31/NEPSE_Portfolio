@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_db
-from .routes import analysis, holdings, stocks, users
+from .routes import analysis, holdings, movers, stocks, users
 from .scheduler import build_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -46,6 +46,7 @@ app.include_router(stocks.router)
 app.include_router(users.router)
 app.include_router(holdings.router)
 app.include_router(analysis.router)
+app.include_router(movers.router)
 
 
 @app.get("/health")

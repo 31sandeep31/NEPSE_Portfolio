@@ -23,6 +23,16 @@ class LiveSnapshot(BaseModel):
     prices: list[LivePrice]
 
 
+class DailyBar(BaseModel):
+    symbol: str
+    date: str  # ISO date
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
+    close: float | None = None
+    volume: int | None = None
+
+
 class Fundamentals(BaseModel):
     symbol: str
     sector: str | None = None

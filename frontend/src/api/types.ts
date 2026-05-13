@@ -71,16 +71,30 @@ export interface Signal {
   data: Record<string, unknown>
 }
 
+export interface FeeBreakdown {
+  broker_commission: number
+  sebon_levy: number
+  dp_charge: number
+  capital_gains_tax: number
+  cgt_rate: number
+  total: number
+}
+
 export interface HoldingAnalysis {
   holding_id: number
   symbol: string
   qty: number
   buy_price: number
   cost_basis: number
+  cost_basis_with_fees: number
   current_price: number | null
   current_value: number | null
   unrealized_pl: number | null
   unrealized_pl_pct: number | null
+  net_proceeds_if_sold: number | null
+  net_pl_if_sold: number | null
+  net_pl_pct_if_sold: number | null
+  sell_fees: FeeBreakdown | null
   target_pct: number | null
   signals: Signal[]
 }
@@ -91,9 +105,45 @@ export interface PortfolioAnalysis {
   market_open: boolean | null
   last_price_update: string | null
   total_cost_basis: number
+  total_cost_basis_with_fees: number
   total_current_value: number | null
   total_unrealized_pl: number | null
   total_unrealized_pl_pct: number | null
+  total_net_proceeds_if_sold: number | null
+  total_net_pl_if_sold: number | null
+  total_net_pl_pct_if_sold: number | null
   holdings: HoldingAnalysis[]
   warnings: string[]
+}
+
+export interface PriceBar {
+  date: string
+  open: number | null
+  high: number | null
+  low: number | null
+  close: number | null
+  volume: number | null
+}
+
+export interface MoverRow {
+  symbol: string
+  ltp: number | null
+  pct_change: number | null
+  qty: number | null
+  sector: string | null
+}
+
+export interface SectorSummary {
+  sector: string
+  count: number
+  avg_pct_change: number
+  up: number
+  down: number
+}
+
+export interface MoversResponse {
+  gainers: MoverRow[]
+  losers: MoverRow[]
+  by_volume: MoverRow[]
+  sector_summary: SectorSummary[]
 }
