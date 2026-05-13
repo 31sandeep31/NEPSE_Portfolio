@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { api } from "../api/client"
 import type { NewsArticle } from "../api/types"
-import { useUsername } from "../hooks/useUsername"
+import { usePortfolio } from "../hooks/usePortfolio"
 
 type Filter = "all" | "mine" | "monetary" | "fiscal" | "macro" | "corporate_action"
 
@@ -16,8 +16,9 @@ const FILTERS: { key: Filter; label: string; help: string }[] = [
 ]
 
 export function News() {
-  const { username } = useUsername()
+  const { holdings } = usePortfolio()
   const [filter, setFilter] = useState<Filter>("all")
+  const heldSymbols = holdings.map((h) => h.symbol)
 
   const allQ = useQuery({
     queryKey: ["news", filter === "mine" ? "all" : filter],
@@ -28,9 +29,9 @@ export function News() {
   })
 
   const mineQ = useQuery({
-    queryKey: ["news", "for-user", username],
-    queryFn: () => api.getNewsForUser(username!, 100),
-    enabled: filter === "mine" && !!username,
+    queryKey: ["news", "relevant", heldSymbols.join(",")],
+    queryFn: () => api.postRelevantNews(heldSymbols, 100),
+    enabled: filter === "mine" && heldSymbols.length > 0,
     refetchInterval: 60_000 * 5,
   })
 
@@ -43,20 +44,20 @@ export function News() {
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold">News</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Pulled from Sharesansar every 30 min. Each article is tagged for the topics it mentions
-          and any of your held symbols.
+          Pulled from Sharesansar every 30 min. Articles are tagged by topic and by any NEPSE
+          symbol they mention.
         </p>
       </header>
 
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => {
-          const disabled = f.key === "mine" && !username
+          const disabled = f.key === "mine" && heldSymbols.length === 0
           return (
             <button
               key={f.key}
               disabled={disabled}
               onClick={() => setFilter(f.key)}
-              title={disabled ? "Set a username first" : f.help}
+              title={disabled ? "Add a holding first" : f.help}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 filter === f.key
                   ? "bg-blue-600 text-white border-blue-600"

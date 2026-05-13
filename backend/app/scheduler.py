@@ -16,7 +16,6 @@ from .db import MacroSnap, NewsItem, init_db, session
 from .db.models import NewsItem as NewsItemModel
 from .db.repo import (
     all_known_symbols,
-    held_symbols,
     history_min_max_date,
     upsert_daily_bars,
     upsert_fundamentals,
@@ -119,14 +118,15 @@ def _job_refresh_news() -> None:
     if not articles:
         return
     with session() as s:
-        held = set(held_symbols(s))
+        # With server-side portfolios removed, we tag every known NEPSE symbol that
+        # appears in a headline; the frontend filters by its own localStorage holdings.
         all_syms = set(all_known_symbols(s))
         n_new = 0
         for a in articles:
             existing = s.get(NewsItem, a.slug)
             if existing is not None:
                 continue
-            tags = detect_tags(a.title, sorted(held), all_syms)
+            tags = detect_tags(a.title, [], all_syms)
             row = NewsItem(
                 slug=a.slug,
                 title=a.title,
@@ -170,13 +170,15 @@ def _job_refresh_macro() -> None:
     log.info("macro: saved snapshot as_of=%s", snap.banking.as_of)
 
 
-def _job_refresh_fundamentals_for_held() -> None:
+def _job_refresh_fundamentals_for_all() -> None:
+    """Refresh fundamentals for every known NEPSE symbol. ~300 stocks × 1.5s delay
+    is ~8 minutes total — fine for a once-daily after-close job."""
     with session() as s:
-        symbols = held_symbols(s)
+        symbols = all_known_symbols(s)
     if not symbols:
-        log.info("fundamentals: no held symbols, nothing to refresh")
+        log.info("fundamentals: no symbols yet, skipping")
         return
-    log.info("fundamentals: refreshing %d held symbols", len(symbols))
+    log.info("fundamentals: refreshing %d symbols", len(symbols))
     for sym in symbols:
         try:
             f = fetch_fundamentals(sym)
@@ -212,9 +214,9 @@ def build_scheduler() -> BackgroundScheduler:
         coalesce=True,
     )
     sched.add_job(
-        _job_refresh_fundamentals_for_held,
+        _job_refresh_fundamentals_for_all,
         CronTrigger(day_of_week="sun,mon,tue,wed,thu", hour=10, minute=30, timezone="UTC"),
-        id="refresh_fundamentals_held",
+        id="refresh_fundamentals_all",
         max_instances=1,
         coalesce=True,
     )

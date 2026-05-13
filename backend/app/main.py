@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_db
-from .routes import analysis, holdings, movers, news, policy, stocks, users
+from .routes import analysis, movers, news, policy, stocks
 from .scheduler import build_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -43,8 +43,6 @@ app.add_middleware(
 )
 
 app.include_router(stocks.router)
-app.include_router(users.router)
-app.include_router(holdings.router)
 app.include_router(analysis.router)
 app.include_router(movers.router)
 app.include_router(news.router)

@@ -1,43 +1,88 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { Link } from "react-router-dom"
-import { api } from "../api/client"
-import type { HoldingInput } from "../api/types"
 import { fmtMoney } from "../components/PriceCell"
-import { useUsername } from "../hooks/useUsername"
+import { usePortfolio } from "../hooks/usePortfolio"
 
 export function Portfolio() {
-  const { username } = useUsername()
-  const qc = useQueryClient()
-
-  const holdings = useQuery({
-    queryKey: ["holdings", username],
-    queryFn: () => api.listHoldings(username!),
-    enabled: !!username,
-  })
-
-  const removeMut = useMutation({
-    mutationFn: (id: number) => api.deleteHolding(username!, id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["holdings", username] })
-      qc.invalidateQueries({ queryKey: ["analysis", username] })
-    },
-  })
-
-  if (!username) return null
+  const { holdings, addHolding, removeHolding, clearAll, exportJson, importJson } = usePortfolio()
+  const [showImport, setShowImport] = useState(false)
+  const [importText, setImportText] = useState("")
+  const [importErr, setImportErr] = useState<string | null>(null)
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Your portfolio</h1>
+      <header className="flex items-baseline justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Your portfolio</h1>
+          <p className="text-xs text-gray-500 mt-1">
+            Stored only in this browser. No login. Use Export/Import to move between devices.
+          </p>
+        </div>
+        <div className="flex gap-2 text-xs">
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(exportJson())
+              alert("Portfolio JSON copied to clipboard.")
+            }}
+            disabled={holdings.length === 0}
+            className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40"
+          >
+            Export
+          </button>
+          <button
+            onClick={() => setShowImport((v) => !v)}
+            className="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            Import
+          </button>
+          <button
+            onClick={() => {
+              if (holdings.length > 0 && confirm("Delete all holdings? This cannot be undone."))
+                clearAll()
+            }}
+            disabled={holdings.length === 0}
+            className="px-3 py-1.5 rounded border border-red-300 text-red-700 dark:border-red-800 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-40"
+          >
+            Clear
+          </button>
+        </div>
+      </header>
 
-      <AddHoldingForm />
+      {showImport && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 space-y-2">
+          <textarea
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+            placeholder='Paste exported JSON here, e.g. {"holdings":[...]}'
+            className="w-full h-24 px-2 py-1.5 text-xs font-mono border border-gray-300 dark:border-gray-700 dark:bg-gray-800 rounded"
+          />
+          <div className="flex gap-2 items-center">
+            <button
+              onClick={() => {
+                const r = importJson(importText)
+                if (r.ok) {
+                  setImportText("")
+                  setImportErr(null)
+                  setShowImport(false)
+                } else {
+                  setImportErr(r.error ?? "import failed")
+                }
+              }}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs"
+            >
+              Replace portfolio with this
+            </button>
+            {importErr && <span className="text-xs text-red-600">{importErr}</span>}
+          </div>
+        </div>
+      )}
+
+      <AddHoldingForm onAdd={addHolding} />
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Holdings</h2>
-        {holdings.isLoading ? (
-          <p className="text-gray-500">Loading...</p>
-        ) : !holdings.data?.length ? (
-          <p className="text-gray-500">No holdings yet. Add one above.</p>
+        {holdings.length === 0 ? (
+          <p className="text-gray-500 text-sm">No holdings yet. Add one above.</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
             <table className="min-w-full text-sm">
@@ -52,8 +97,8 @@ export function Portfolio() {
                 </tr>
               </thead>
               <tbody>
-                {holdings.data.map((h) => (
-                  <tr key={h.id} className="border-t border-gray-100 dark:border-gray-800">
+                {holdings.map((h) => (
+                  <tr key={h.client_id} className="border-t border-gray-100 dark:border-gray-800">
                     <td className="px-3 py-2 font-mono">
                       <Link to={`/stocks/${h.symbol}`} className="text-blue-600 hover:underline">
                         {h.symbol}
@@ -68,7 +113,7 @@ export function Portfolio() {
                     <td className="px-3 py-2 text-right">
                       <button
                         onClick={() => {
-                          if (confirm(`Remove ${h.qty} × ${h.symbol}?`)) removeMut.mutate(h.id)
+                          if (confirm(`Remove ${h.qty} × ${h.symbol}?`)) removeHolding(h.client_id)
                         }}
                         className="text-red-600 hover:underline text-xs"
                       >
@@ -86,39 +131,30 @@ export function Portfolio() {
   )
 }
 
-function AddHoldingForm() {
-  const { username } = useUsername()
-  const qc = useQueryClient()
-  const [form, setForm] = useState<HoldingInput>({
+interface AddInput {
+  symbol: string
+  qty: number
+  buy_price: number
+  buy_date: string
+  target_pct: number | null
+}
+
+function AddHoldingForm({ onAdd }: { onAdd: (h: AddInput) => void }) {
+  const [form, setForm] = useState<AddInput>({
     symbol: "",
     qty: 0,
     buy_price: 0,
     buy_date: new Date().toISOString().slice(0, 10),
     target_pct: null,
   })
-  const [error, setError] = useState<string | null>(null)
-
-  const addMut = useMutation({
-    mutationFn: (body: HoldingInput) =>
-      api.addHolding(username!, {
-        ...body,
-        symbol: body.symbol.toUpperCase().trim(),
-        buy_date: new Date(body.buy_date).toISOString(),
-      }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["holdings", username] })
-      qc.invalidateQueries({ queryKey: ["analysis", username] })
-      setForm((f) => ({ ...f, symbol: "", qty: 0, buy_price: 0 }))
-      setError(null)
-    },
-    onError: (e) => setError(e instanceof Error ? e.message : "Failed"),
-  })
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        addMut.mutate(form)
+        if (!form.symbol.trim() || form.qty <= 0 || form.buy_price <= 0) return
+        onAdd({ ...form, symbol: form.symbol.toUpperCase().trim() })
+        setForm((f) => ({ ...f, symbol: "", qty: 0, buy_price: 0 }))
       }}
       className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4"
     >
@@ -176,15 +212,13 @@ function AddHoldingForm() {
           />
         </Field>
       </div>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3">
         <button
           type="submit"
-          disabled={addMut.isPending}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
-          {addMut.isPending ? "Adding..." : "Add holding"}
+          Add holding
         </button>
-        {error && <span className="text-sm text-red-600">{error}</span>}
       </div>
     </form>
   )

@@ -1,5 +1,4 @@
 import type {
-  Holding,
   HoldingInput,
   MacroResponse,
   MoversResponse,
@@ -13,8 +12,6 @@ import type {
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://127.0.0.1:8765"
 
-const USERNAME_KEY = "nepse_portfolio_username_v1"
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -22,20 +19,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!r.ok) {
     const body = await r.text().catch(() => "")
-    // If a user-scoped GET is forbidden, the cached username is no longer valid.
-    // Clear it and reload so the login modal reappears.
-    if (
-      r.status === 403 &&
-      /^\/users\/[^/]+\//.test(path) &&
-      (init?.method ?? "GET").toUpperCase() === "GET"
-    ) {
-      try {
-        window.localStorage.removeItem(USERNAME_KEY)
-      } catch {
-        /* ignore */
-      }
-      window.location.reload()
-    }
     throw new Error(`${r.status} ${r.statusText}: ${body || path}`)
   }
   return r.json() as Promise<T>
@@ -52,36 +35,22 @@ export const api = {
 
   getMovers: (limit = 5) => request<MoversResponse>(`/movers?limit=${limit}`),
 
+  postAnalysis: (holdings: HoldingInput[]) =>
+    request<PortfolioAnalysis>("/analysis", {
+      method: "POST",
+      body: JSON.stringify({ holdings }),
+    }),
+
   getNews: (filter: "all" | "monetary" | "fiscal" | "macro" | "corporate_action" = "all", limit = 100) =>
     request<NewsArticle[]>(`/news?filter=${filter}&limit=${limit}`),
 
-  getNewsForUser: (username: string, limit = 100) =>
-    request<NewsArticle[]>(`/news/for-user/${username}?limit=${limit}`),
+  postRelevantNews: (symbols: string[], limit = 100) =>
+    request<NewsArticle[]>(`/news/relevant?limit=${limit}`, {
+      method: "POST",
+      body: JSON.stringify({ symbols }),
+    }),
 
   getPolicyRates: () => request<PolicyRatesResponse>("/policy/rates"),
 
   getMacro: () => request<MacroResponse>("/policy/macro"),
-
-  claimUsername: (username: string) =>
-    request<{ username: string; created_at: string }>("/users", {
-      method: "POST",
-      body: JSON.stringify({ username }),
-    }),
-
-  listHoldings: (username: string) =>
-    request<Holding[]>(`/users/${username}/holdings`),
-
-  addHolding: (username: string, body: HoldingInput) =>
-    request<Holding>(`/users/${username}/holdings`, {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-
-  deleteHolding: (username: string, id: number) =>
-    request<{ deleted: number }>(`/users/${username}/holdings/${id}`, {
-      method: "DELETE",
-    }),
-
-  getAnalysis: (username: string) =>
-    request<PortfolioAnalysis>(`/users/${username}/analysis`),
 }

@@ -36,18 +36,8 @@ export interface StockDetail {
   fundamentals: Fundamentals | null
 }
 
-export interface Holding {
-  id: number
-  username: string
-  symbol: string
-  qty: number
-  buy_price: number
-  buy_date: string
-  target_pct: number | null
-  created_at: string
-}
-
 export interface HoldingInput {
+  client_id?: string
   symbol: string
   qty: number
   buy_price: number
@@ -81,7 +71,7 @@ export interface FeeBreakdown {
 }
 
 export interface HoldingAnalysis {
-  holding_id: number
+  client_id: string | null
   symbol: string
   qty: number
   buy_price: number
@@ -100,7 +90,6 @@ export interface HoldingAnalysis {
 }
 
 export interface PortfolioAnalysis {
-  username: string
   as_of: string
   market_open: boolean | null
   last_price_update: string | null

@@ -18,7 +18,9 @@ from typing import Callable
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from .db.models import Holding, Stock, StockFundamentals
+from datetime import date as date_t
+
+from .db.models import Stock, StockFundamentals
 from .fees import buy_costs, sell_costs
 from .scheduler import is_market_open
 
@@ -43,7 +45,7 @@ class FeeBreakdown(BaseModel):
 
 
 class HoldingAnalysis(BaseModel):
-    holding_id: int
+    client_id: str | None = None
     symbol: str
     qty: float
     buy_price: float
@@ -62,8 +64,17 @@ class HoldingAnalysis(BaseModel):
     signals: list[Signal]
 
 
+class HoldingInput(BaseModel):
+    """Stateless holding payload sent by the browser. No user identity attached."""
+    client_id: str | None = None  # browser-generated, echoed back for matching
+    symbol: str
+    qty: float
+    buy_price: float
+    buy_date: datetime
+    target_pct: float | None = None
+
+
 class PortfolioAnalysis(BaseModel):
-    username: str
     as_of: datetime
     market_open: bool | None
     last_price_update: datetime | None
@@ -83,7 +94,7 @@ class PortfolioAnalysis(BaseModel):
 
 @dataclass
 class RuleContext:
-    holding: Holding
+    holding: HoldingInput
     stock: Stock
     fund: StockFundamentals | None
     sector_pe_median: float | None
@@ -271,9 +282,7 @@ RULES: list[Callable[[RuleContext], Signal | None]] = [
 
 # ---------- engine ----------
 
-def analyze_portfolio(s: Session, username: str) -> PortfolioAnalysis:
-    holdings = s.exec(select(Holding).where(Holding.username == username)).all()
-
+def analyze_portfolio(s: Session, holdings: list[HoldingInput]) -> PortfolioAnalysis:
     sector_medians = _build_sector_medians(s)
 
     warnings: list[str] = []
@@ -363,7 +372,7 @@ def analyze_portfolio(s: Session, username: str) -> PortfolioAnalysis:
 
         holding_analyses.append(
             HoldingAnalysis(
-                holding_id=h.id,
+                client_id=h.client_id,
                 symbol=h.symbol,
                 qty=h.qty,
                 buy_price=h.buy_price,
@@ -398,7 +407,6 @@ def analyze_portfolio(s: Session, username: str) -> PortfolioAnalysis:
         ) if total_cost_with_fees > 0 else None
 
     return PortfolioAnalysis(
-        username=username,
         as_of=datetime.now(timezone.utc),
         market_open=market_open,
         last_price_update=last_price_update,

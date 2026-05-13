@@ -1,7 +1,5 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 import { Layout } from "./components/Layout"
-import { UsernameModal } from "./components/UsernameModal"
-import { useUsername } from "./hooks/useUsername"
 import { Dashboard } from "./pages/Dashboard"
 import { Learn } from "./pages/Learn"
 import { News } from "./pages/News"
@@ -11,10 +9,8 @@ import { Stocks } from "./pages/Stocks"
 import { StockDetail } from "./pages/StockDetail"
 
 export default function App() {
-  const { username } = useUsername()
   return (
     <BrowserRouter>
-      {!username && <UsernameModal />}
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />

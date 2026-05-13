@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import json
-
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Query
+from pydantic import BaseModel
 from sqlmodel import select
 
-from ..auth import require_allowed_username
-from ..db import NewsItem, User, session
-from ..db.repo import held_symbols_for_user
+from ..db import NewsItem, session
 
 router = APIRouter(prefix="/news", tags=["news"])
 
@@ -31,23 +28,27 @@ def list_news(
     return out
 
 
-@router.get("/for-user/{username}", dependencies=[Depends(require_allowed_username)])
-def news_for_user(username: str, limit: int = 100):
+class RelevantRequest(BaseModel):
+    symbols: list[str]
+
+
+@router.post("/relevant")
+def news_relevant(body: RelevantRequest, limit: int = 100):
+    """Stateless: caller posts the symbols it cares about, server returns news
+    that mentions any of them. Used by the 'Affecting my portfolio' filter."""
+    interested = {s.strip().upper() for s in body.symbols if s.strip()}
     with session() as s:
-        if s.get(User, username) is None:
-            raise HTTPException(status_code=404, detail="user not found")
-        held = set(held_symbols_for_user(s, username))
         rows = s.exec(select(NewsItem).order_by(NewsItem.fetched_at.desc()).limit(500)).all()
 
-    relevant = []
+    out = []
     for r in rows:
         mentioned = set(r.symbols_mentioned_csv.split(",")) if r.symbols_mentioned_csv else set()
-        if not (mentioned & held):
+        if not (mentioned & interested):
             continue
-        relevant.append(_serialize(r))
-        if len(relevant) >= limit:
+        out.append(_serialize(r))
+        if len(out) >= limit:
             break
-    return relevant
+    return out
 
 
 def _serialize(r: NewsItem) -> dict:
