@@ -5,6 +5,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..auth import assert_username_allowed
 from ..db import session
 from ..db.repo import ensure_user
 from ..rate_limit import limit_writes
@@ -29,6 +30,7 @@ def claim_username(body: UserIn):
             status_code=400,
             detail="username must be 2-40 chars, letters/digits/underscore/dot/hyphen only",
         )
+    assert_username_allowed(body.username)
     with session() as s:
         u = ensure_user(s, body.username.strip())
     return {"username": u.username, "created_at": u.created_at.isoformat()}

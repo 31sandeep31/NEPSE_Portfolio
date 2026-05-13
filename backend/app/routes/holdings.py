@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import select
 
+from ..auth import require_allowed_username
 from ..db import Holding, Stock, User, session
 from ..db.repo import upsert_fundamentals
 from ..rate_limit import limit_writes
@@ -25,7 +26,7 @@ class HoldingIn(BaseModel):
     target_pct: float | None = None
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_allowed_username)])
 def list_holdings(username: str):
     _require_user(username)
     with session() as s:
@@ -33,7 +34,7 @@ def list_holdings(username: str):
     return [_serialize(h) for h in rows]
 
 
-@router.post("", dependencies=[Depends(limit_writes)])
+@router.post("", dependencies=[Depends(limit_writes), Depends(require_allowed_username)])
 def add_holding(username: str, body: HoldingIn):
     _require_user(username)
     symbol = body.symbol.upper().strip()
@@ -65,7 +66,7 @@ def add_holding(username: str, body: HoldingIn):
         return _serialize(h)
 
 
-@router.delete("/{holding_id}", dependencies=[Depends(limit_writes)])
+@router.delete("/{holding_id}", dependencies=[Depends(limit_writes), Depends(require_allowed_username)])
 def delete_holding(username: str, holding_id: int):
     _require_user(username)
     with session() as s:

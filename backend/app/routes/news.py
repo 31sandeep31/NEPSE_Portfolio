@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import select
 
+from ..auth import require_allowed_username
 from ..db import NewsItem, User, session
 from ..db.repo import held_symbols_for_user
 
@@ -30,7 +31,7 @@ def list_news(
     return out
 
 
-@router.get("/for-user/{username}")
+@router.get("/for-user/{username}", dependencies=[Depends(require_allowed_username)])
 def news_for_user(username: str, limit: int = 100):
     with session() as s:
         if s.get(User, username) is None:

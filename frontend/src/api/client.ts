@@ -13,6 +13,8 @@ import type {
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://127.0.0.1:8765"
 
+const USERNAME_KEY = "nepse_portfolio_username_v1"
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -20,6 +22,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!r.ok) {
     const body = await r.text().catch(() => "")
+    // If a user-scoped GET is forbidden, the cached username is no longer valid.
+    // Clear it and reload so the login modal reappears.
+    if (
+      r.status === 403 &&
+      /^\/users\/[^/]+\//.test(path) &&
+      (init?.method ?? "GET").toUpperCase() === "GET"
+    ) {
+      try {
+        window.localStorage.removeItem(USERNAME_KEY)
+      } catch {
+        /* ignore */
+      }
+      window.location.reload()
+    }
     throw new Error(`${r.status} ${r.statusText}: ${body || path}`)
   }
   return r.json() as Promise<T>
